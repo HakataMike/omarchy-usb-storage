@@ -2,7 +2,7 @@
 
 A bar widget for the [Omarchy](https://omarchy.org) shell that shows plugged-in USB drives. The icon only appears while a drive is connected; click it for details and a safe-eject button.
 
-![USB Storage panel](screenshot.png)
+![USB Storage panel](preview.png)
 
 ## Features
 
