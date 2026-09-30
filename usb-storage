@@ -1,0 +1,89 @@
+#!/bin/bash
+# Helper for the hakatamike.usb-storage bar widget.
+#
+#   usb-storage list          JSON array describing every USB-attached disk
+#   usb-storage eject <disk>  unmount every partition, then power the disk off
+#
+# Everything goes through udisks, so no root is needed for removable drives.
+
+set -o pipefail
+
+usb_link_speed() {
+  # Walk up from the block device's sysfs node to the USB device that owns
+  # it; that node carries the negotiated link speed and descriptor strings.
+  local dir
+  dir=$(readlink -f "/sys/block/$1") || return
+  while [[ $dir != / && ! -f $dir/speed ]]; do dir=${dir%/*}; done
+  [[ -f $dir/speed ]] || return
+  jq -n \
+    --arg speed "$(<"$dir/speed")" \
+    --arg version "$(tr -d ' ' <"$dir/version" 2>/dev/null)" \
+    --arg manufacturer "$(cat "$dir/manufacturer" 2>/dev/null)" \
+    --arg product "$(cat "$dir/product" 2>/dev/null)" \
+    --arg port "${dir##*/}" \
+    '{speed: ($speed | tonumber? // 0), version: $version, manufacturer: $manufacturer, product: $product, port: $port}'
+}
+
+list() {
+  local disks usb='{}' name info
+  disks=$(lsblk -J -b -o NAME,PATH,TRAN,TYPE,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS,MODEL,VENDOR,SERIAL,FSSIZE,FSUSED,FSAVAIL,RM) || {
+    echo '[]'
+    return
+  }
+
+  for name in $(jq -r '.blockdevices[] | select(.tran == "usb" and .type == "disk") | .name' <<<"$disks"); do
+    info=$(usb_link_speed "$name") || continue
+    usb=$(jq --arg n "$name" --argjson i "$info" '. + {($n): $i}' <<<"$usb")
+  done
+
+  jq --argjson usb "$usb" '
+    def trim: if . == null then "" else sub("^\\s+"; "") | sub("\\s+$"; "") end;
+    [ .blockdevices[]
+      | select(.tran == "usb" and .type == "disk")
+      | . as $d
+      | ($d.children // [$d]) as $parts
+      | {
+          name: $d.name,
+          path: $d.path,
+          size: $d.size,
+          vendor: ($d.vendor | trim),
+          model: ($d.model | trim),
+          serial: ($d.serial | trim),
+          removable: $d.rm,
+          usb: ($usb[$d.name] // {}),
+          partitions: [ $parts[]
+            | select(.fstype != null)
+            | {
+                name, path, fstype, uuid,
+                label: (.label // ""),
+                mountpoint: ((.mountpoints // []) | map(select(. != null)) | first // ""),
+                size: (.fssize // .size),
+                used: .fsused,
+                avail: .fsavail
+              } ]
+        } ]' <<<"$disks"
+}
+
+eject() {
+  local disk=$1 part mounted
+
+  [[ -b $disk ]] || { echo "No such device: $disk" >&2; return 1; }
+  [[ $(lsblk -dno TRAN "$disk") == usb ]] || { echo "$disk is not a USB drive" >&2; return 1; }
+
+  sync
+  while read -r part mounted; do
+    [[ -n $mounted ]] || continue
+    udisksctl unmount --no-user-interaction -b "$part" >/dev/null || return 1
+  done < <(lsblk -lnpo PATH,MOUNTPOINT "$disk")
+
+  udisksctl power-off --no-user-interaction -b "$disk" >/dev/null
+}
+
+case $1 in
+  list) list ;;
+  eject) eject "$2" ;;
+  *)
+    echo "usage: ${0##*/} list | eject <disk>" >&2
+    exit 2
+    ;;
+esac

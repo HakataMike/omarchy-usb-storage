@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "hakatamike.usb-storage",
+  "name": "USB Storage",
+  "version": "1.0.0",
+  "author": "hakatamike",
+  "description": "Shows plugged-in USB drives with details and an eject button",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "USB Storage",
+    "description": "USB drive icon with details and eject",
+    "category": "System",
+    "allowMultiple": false
+  }
+}
