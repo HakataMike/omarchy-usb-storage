@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -287,7 +288,7 @@ Panel {
               wrapMode: Text.WordWrap
               textFormat: Text.PlainText
               text: "This USB 3 drive is running at USB 2 speed. Reseat it firmly or plug it straight into a rear motherboard port."
-              color: Color.urgent
+              color: Commons.Color.urgent
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.caption
             }
