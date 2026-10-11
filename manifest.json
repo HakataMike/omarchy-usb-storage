@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "hakatamike.usb-storage",
   "name": "USB Storage",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "hakatamike",
   "description": "Shows plugged-in USB drives with details and an eject button",
   "kinds": [
