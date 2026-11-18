@@ -64,17 +64,40 @@ list() {
         } ]' <<<"$disks"
 }
 
+busy_apps() {
+  # Names of the processes keeping a filesystem busy, for the error message.
+  command -v fuser >/dev/null || return
+  local pid names=()
+  for pid in $(fuser -m "$1" 2>/dev/null); do
+    names+=("$(cat "/proc/$pid/comm" 2>/dev/null)")
+  done
+  ((${#names[@]})) && printf '%s\n' "${names[@]}" | sort -u | paste -sd, - | sed 's/,/, /g'
+}
+
 eject() {
-  local disk=$1 part mounted
+  local disk=$1 path type fstype mounted apps
 
   [[ -b $disk ]] || { echo "No such device: $disk" >&2; return 1; }
   [[ $(lsblk -dno TRAN "$disk") == usb ]] || { echo "$disk is not a USB drive" >&2; return 1; }
 
-  sync
-  while read -r part mounted; do
+  # Unmount every mounted filesystem on the disk, including ones inside an
+  # unlocked encrypted container. Flush only this disk, not every disk.
+  while read -r path mounted; do
     [[ -n $mounted ]] || continue
-    udisksctl unmount --no-user-interaction -b "$part" >/dev/null || return 1
+    sync -f "$mounted"
+    if ! udisksctl unmount --no-user-interaction -b "$path" >/dev/null; then
+      apps=$(busy_apps "$mounted")
+      [[ -n $apps ]] && echo "Drive is in use by: $apps" >&2
+      return 1
+    fi
   done < <(lsblk -lnpo PATH,MOUNTPOINT "$disk")
+
+  # Lock unlocked encrypted containers, or the power-off below fails.
+  while read -r path type fstype; do
+    [[ $fstype == crypto_LUKS ]] || continue
+    [[ -n $(lsblk -lno TYPE "$path" | grep -x crypt) ]] || continue
+    udisksctl lock --no-user-interaction -b "$path" >/dev/null || return 1
+  done < <(lsblk -lnpo PATH,TYPE,FSTYPE "$disk")
 
   udisksctl power-off --no-user-interaction -b "$disk" >/dev/null
 }
